@@ -1,20 +1,220 @@
-# Reproducible Research: Peer Assessment 1
+---
+title: "Reproducible Research: Project1"
+author: "Chad Burdyshaw"
+date: "Friday, July 11, 2014"
+output: html_document
+---
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+#load necessary libraries
+library(ggplot2)
+library(plyr)
+#install.packages("doBy")
+library(doBy)
+library(lattice)
+```
+  
+=====================================    
+
+###Loading and preprocessing the data
+```{r loaddata}
+activity <- read.csv("activity.csv",stringsAsFactors=FALSE)
+#convert date factor to date
+activity$date<-as.Date(activity$date,format="%Y-%m-%d")
+```
+
+```{r examine data}
+#calculate total steps per day
+# Sum the total number of steps for each day
+dailytotal=tapply(activity$steps,activity$date,sum)
+```
+
+```{r}
+#make histogram of total number of steps taken each day
+dailytotal_hist=hist(dailytotal,xlab="Total steps taken per day",breaks=20,main="Original data set")
+```
+
+```{r}
+#calculate and report mean and median total number of steps taken per day
+mean.orig<-mean(dailytotal,na.rm=TRUE)
+median.orig<-median(dailytotal,na.rm=TRUE)
+```
+The mean and medial total number of steps taken per day are `r mean.orig` and `r median.orig` respectively.
 
 
-## Loading and preprocessing the data
+###What is the average daily activity pattern?
+```{r interval_calculations}
+#compute total and mean step counts for each interval and add them to a data set
+activity_interval <-ddply(activity,"interval",transform,totsteps=sum(steps,na.rm=TRUE),avgsteps=mean(steps,na.rm=TRUE))
+#remove duplicated interval values
+interval_sub=subset(activity_interval,!duplicated(interval))
+```
+
+```{r locate_max_steps_interval}
+#locate 5 min interval on average across all the days in the dataset, which contains the maximum number of steps.
+point.index=which(interval_sub$totsteps==max(interval_sub$totsteps))
+interval=interval_sub$interval[point.index]
+maxsteps=interval_sub$avgsteps[point.index]
+```
+
+Plot of average steps for each interval across all days in the data set.
+Maximum average steps occurs at point indicated by the red dot at interval `r interval`
+```{r plot_steps_vs_intervals}
+plot(x=interval_sub$interval,y=interval_sub$avgsteps,type="l",xlab="Interval",ylab="Avg number of steps",main="Avg steps per interval, for all days")
+#add point to plot marking the max average step and interval
+points(interval,maxsteps,col="red",pch=20)
+```
 
 
+###Imputing missing values
 
-## What is mean total number of steps taken per day?
+The presence of missing values in a data set introduces a bias towards the recorded values in the analysis of the data. 
+
+```{r missingvalues}
+#calculate and report the total number of missing values in the dataset (total number of rows with NA's)
+#summary(activity)
+#missing values only in the steps field
+#sum(is.na(activity$steps))
+n.missingVals=sum(!complete.cases(activity))
+n.totalVals=nrow(activity)
+```
+The total number of missing values in the original data set is `r n.missingVals` out of `r n.totalVals`. Which means that `r (n.missingVals/n.totalVals)*100`% of the data is missing.
+
+In order to address this missing value bias, we can judiciously impute values that would likely have been recorded.
+
+There are several ways to impute values, all of which can introduce their own biases.
+
+I have decided to investigate two simple imputation methods. One which simply replaces the missing values with the mean of the existing values, and another which replaces each missing value with a random sampling of the existing values.
+```{r imputation_functions}
+
+#function to replace missing values with the mean of existing values
+mean.imp<-function(a){
+    missing<-is.na(a)
+    n.missing<-sum(missing)
+    a.obs<-a[!missing]
+    imputed<-a
+    imputed[missing]<-mean(a.obs,na.rm=TRUE)
+    return(imputed)    
+}
+#function to replace missing values with a random sample of existing values
+random.imp<-function(a){
+    missing<-is.na(a)
+    n.missing<-sum(missing)
+    a.obs<-a[!missing]
+    imputed<-a
+    imputed[missing]<-sample(a.obs,n.missing,replace=TRUE)
+    return(imputed)
+}
+
+#Create new datasets that are equal to the original dataset but with missing data filled in.
+
+#replace with the mean
+activity.mean.imp<-activity
+activity.mean.imp$steps<-mean.imp(activity$steps)
+
+#random replacement
+set.seed(144)
+activity.rand.imp<-activity
+activity.rand.imp$steps<-random.imp(activity$steps)
+```
 
 
+###Analysis of total steps taken per day for imputed data sets
+```{r imputation_data_sums}
+#sum data with random imputations
+dailytotal.rand.imp=tapply(activity.rand.imp$steps,activity.rand.imp$date,sum)
 
-## What is the average daily activity pattern?
+#sum data with mean imputation
+dailytotal.mean.imp=tapply(activity.mean.imp$steps,activity.mean.imp$date,sum)
+```
+
+Imputing to the mean significantly skews the data towards the mean
+```{r mean_imputation}
+#make histogram of total number of steps taken each day for mean imputation
+dailytotal.mean.imp_hist=hist(dailytotal.mean.imp,xlab="Total steps taken per day",breaks=20,main="Mean imputation")
+```
+
+```{r mean_imputation_mean_median_report}
+mean.mean.imp<-mean(dailytotal.mean.imp,na.rm=TRUE)
+median.mean.imp<-median(dailytotal.mean.imp,na.rm=TRUE)
+```
+The mean and median values of the mean imputed data set are `r mean.mean.imp` and `r median.mean.imp` respectively.
 
 
+Imputing using random sampling produces a distribution which is similar in shape to the original data set
+```{r random_imputation}
+#make histogram of total number of steps taken each day for random imputation
+dailytotal.rand.imp_hist=hist(dailytotal.rand.imp,xlab="Total steps taken per day",breaks=20,main="Random imputation")
+```
 
-## Imputing missing values
+```{r random_imputation_mean_median_report}
+#calculate and report mean and median total number of steps taken per day
+mean.rand.imp<-mean(dailytotal.rand.imp,na.rm=TRUE)
+median.rand.imp<-median(dailytotal.rand.imp,na.rm=TRUE)
+```
+The mean and median values of the randomly imputed data set are `r mean.rand.imp` and `r median.rand.imp` respectively.
 
 
+Do these values differ from the estimates from the first part of the assignment? 
 
-## Are there differences in activity patterns between weekdays and weekends?
+```{r mean_median_diffs_mean_imp}
+#with mean imputation, only the mean value is added so the mean remains constant
+#and the median shifts slightly
+rel.mean.mean.error<-abs(mean.orig-mean.mean.imp)/mean.orig
+rel.median.mean.error<-abs(median.orig-median.mean.imp)/median.orig
+```
+The relative error between the original and mean imputed data is:
+mean error=`r rel.mean.mean.error` and median error=`r rel.median.mean.error`
+
+```{r mean_median_diffs_rand_imp}
+
+#with random imputation many different values are added, so the mean is shifted
+#the median remains constant
+rel.mean.rand.error<-abs(mean.orig-mean.rand.imp)/mean.orig
+rel.median.rand.error<-abs(median.orig-median.rand.imp)/median.orig
+```
+The relative error between the original and randomly imputed data is:
+mean error=`r rel.mean.rand.error` and median error=`r rel.median.rand.error`
+
+
+###What is the impact of imputing missing data on the estimates of the total daily number of steps?
+```{r imputation_histogram_overlay}
+#overlay histograms
+dailytotal.mean.imp_hist=hist(dailytotal.mean.imp,col=rgb(1,0,0,1),xlab="Total steps taken per day",breaks=20,ylim=c(0,20),main="comparison of imputation strategies on distribution of daily step values")
+dailytotal.rand.imp_hist=hist(dailytotal.rand.imp,col=rgb(0,0,1,1),breaks=20,add=T)
+dailytotal_hist=hist(dailytotal,col=rgb(0,1,0,1),breaks=20,add=T)
+legend("topright",c("mean","rand","orig"),fill=c(rgb(1,0,0,1),rgb(0,0,1,1),rgb(0,1,0,1)))
+```
+From the histogram overlay we can see that a mean imputation largely overestimates the frequency of the mean. The random imputation slightly raises the value of the mean but retains a similar frequency distribution as the original data.
+
+
+###Are there differences in activity patterns between weekdays and weekends?
+
+Compute average steps per interval separated by weekday and weekend
+```{r dayType_segregation}
+#Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend.
+daytype.classify<-function(a){
+    a.day=weekdays(a)    
+    weekend=which(a.day=="Saturday" | a.day=="Sunday")
+    a.n=length(a)
+    dayType<-c(rep(0,a.n))
+    dayType[weekend] <- 1
+    dayType=as.factor(dayType)
+    levels(dayType)<-c("Weekday","Weekend")
+    return(dayType)
+}
+#apply function to create new dataset variable
+activity.rand.imp$dayType<-daytype.classify(activity.rand.imp$date)
+```
+
+Plot of time series of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
+```{r dayType_avgSteps_plot}
+#compute average and total over intervals for each dayType independently
+interval_data<-summaryBy(steps~interval|dayType,data=activity.rand.imp,FUN=c(sum,mean),na.rm=TRUE)
+#plot interval data
+xyplot(steps.mean~interval|dayType,data=interval_data,type="l",xlab="Interval",ylab="Avg Steps",main="Avg steps taken for each interval")
+```
+The activity pattern for weekdays differs somewhat from the weekend. Weekend data shows a later onset of activity suggesting the subject sleeps in longer on the weekends and is more physically active throughout the remainder of the weekend. 
+
+The weekday pattern shows a spike of activity at the beginning of the day followed by low activity for the remainder. This suggests either a morning workout routine or physical commute to a job that does not involve much activity.
+
